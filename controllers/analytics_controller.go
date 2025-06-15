@@ -49,17 +49,15 @@ func GetMonthlySales(c *fiber.Ctx) error {
 	var sales []MonthlySales
 	db.Raw(`
 		SELECT 
-    TO_CHAR(transaction_date, 'Month') AS month,
-    COUNT(*) AS count
-FROM 
-    sales
-GROUP BY 
-    TO_CHAR(transaction_date, 'Month'), EXTRACT(MONTH FROM transaction_date)
-ORDER BY 
-    count DESC
-LIMIT 12;
-
-
+			TO_CHAR(transaction_date, 'Month') AS month,
+			COUNT(*) AS count
+		FROM 
+			sales
+		GROUP BY 
+			TO_CHAR(transaction_date, 'Month'), EXTRACT(MONTH FROM transaction_date)
+		ORDER BY 
+			count DESC
+		LIMIT 12;
 	`).Scan(&sales)
 	return c.JSON(sales)
 }
@@ -69,16 +67,16 @@ func GetTopRegions(c *fiber.Ctx) error {
 	var regions []RegionRevenue
 	db.Raw(`
 		SELECT 
-    region,
-    SUM(total_price) AS total_revenue,
-    SUM(quantity) AS items_sold
-FROM 
-    sales
-GROUP BY 
-    region
-ORDER BY 
-    total_revenue DESC
-LIMIT 30;
+		region,
+		SUM(total_price) AS total_revenue,
+		SUM(quantity) AS items_sold
+		FROM 
+			sales
+		GROUP BY 
+			region
+		ORDER BY 
+			total_revenue DESC
+		LIMIT 30;
 	`).Scan(&regions)
 	return c.JSON(regions)
 }
@@ -86,7 +84,6 @@ LIMIT 30;
 func GetChunkedViewData(c *fiber.Ctx) error {
 	fmt.Println("Start time:", time.Now())
 	db := config.DB
-
 	chunkSize := 1000000
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -106,7 +103,6 @@ func GetChunkedViewData(c *fiber.Ctx) error {
 				WHERE row_id BETWEEN ? AND ?
 				ORDER BY row_id;
 			`
-
 			if err := db.Raw(query, start, end).Scan(&chunk).Error; err != nil {
 				log.Printf("Error fetching chunk %d-%d: %v", start, end, err)
 				return
@@ -117,9 +113,6 @@ func GetChunkedViewData(c *fiber.Ctx) error {
 			mu.Unlock()
 		}(start, end)
 	}
-
 	wg.Wait()
-	fmt.Println("end time:", time.Now())
-	log.Println("Total rows fetched:", len(finalResults))
 	return c.JSON(finalResults)
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
@@ -32,6 +33,8 @@ func Init() {
 	createMaterializedViews()
 	createIndexes()
 	RowCount, _ = GetRowCount()
+
+	go scheduleMaterializedViewUpdates()
 }
 func GetRowCount() (int, error) {
 	var count int
@@ -42,6 +45,7 @@ func GetRowCount() (int, error) {
 
 	return count, nil
 }
+
 func createMaterializedViews() {
 	query := `
 		CREATE MATERIALIZED VIEW IF NOT EXISTS mv_country_product_revenue AS
@@ -64,29 +68,39 @@ func createMaterializedViews() {
 	query = `
 		CREATE MATERIALIZED VIEW IF NOT EXISTS mv_top_product AS
 				WITH latest_stock AS (
-    SELECT product_id, stock_quantity
-    FROM (
-        SELECT 
-            product_id,
-            stock_quantity,
-            ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY added_date DESC) as rn
-        FROM sales
-    ) AS ranked
-    WHERE rn = 1
-)
+		SELECT product_id, stock_quantity
+		FROM (
+			SELECT 
+				product_id,
+				stock_quantity,
+				ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY added_date DESC) as rn
+			FROM sales
+		) AS ranked
+		WHERE rn = 1
+		)
 
-SELECT 
-    s.product_id, 
-    SUM(s.quantity) AS purchase_count,
-    ls.stock_quantity
-FROM sales s
-JOIN latest_stock ls ON s.product_id = ls.product_id
-GROUP BY s.product_id, ls.stock_quantity
-ORDER BY purchase_count DESC
-LIMIT 20;
+		SELECT 
+			s.product_id, 
+			SUM(s.quantity) AS purchase_count,
+			ls.stock_quantity
+		FROM sales s
+		JOIN latest_stock ls ON s.product_id = ls.product_id
+		GROUP BY s.product_id, ls.stock_quantity
+		ORDER BY purchase_count DESC
+		LIMIT 20;
 	`
 	if err := DB.Exec(query).Error; err != nil {
 		log.Printf("Error creating materialized view: %v", err)
+	}
+}
+
+func refreshMaterializedViews() {
+	refreshQuery := `
+		REFRESH MATERIALIZED VIEW mv_country_product_revenue;
+		REFRESH MATERIALIZED VIEW mv_top_product;
+	`
+	if err := DB.Exec(refreshQuery).Error; err != nil {
+		log.Printf("Error refreshing materialized views: %v", err)
 	}
 }
 
@@ -100,18 +114,45 @@ func createIndexes() {
 	}
 
 	indexQuery = `
-	CREATE INDEX IF NOT EXISTS idx_sales_product_date
-	ON sales (product_name, added_date DESC);
+		CREATE INDEX IF NOT EXISTS idx_mv_country_product_country_revenue
+		ON mv_country_product_revenue (Country, Total_Revenue DESC);
 	`
 	if err := DB.Exec(indexQuery).Error; err != nil {
 		log.Printf("Error creating index: %v", err)
 	}
 
 	indexQuery = `
-	CREATE INDEX IF NOT EXISTS idx_country_product
-	ON sales (country, product_name);
+		CREATE INDEX IF NOT EXISTS idx_mv_top_product
+		ON mv_top_product (product_id);
 	`
 	if err := DB.Exec(indexQuery).Error; err != nil {
 		log.Printf("Error creating index: %v", err)
+	}
+
+	indexQuery = `
+		CREATE  INDEX IF NOT EXISTS idx_country_product
+		ON sales (country, product_name);
+	`
+	if err := DB.Exec(indexQuery).Error; err != nil {
+		log.Printf("Error creating index: %v", err)
+	}
+}
+
+func scheduleMaterializedViewUpdates() {
+	createIndexes()
+
+	// Run initial refresh
+	refreshMaterializedViews()
+
+	// Refresh every 6 hours
+	ticker := time.NewTicker(time.Duration(AppSettings.RefreshTime) * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			log.Println("Refreshing materialized views...")
+			refreshMaterializedViews()
+		}
 	}
 }
