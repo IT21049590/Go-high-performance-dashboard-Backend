@@ -27,11 +27,11 @@ func ConnectDB() {
 		log.Fatal("Failed to connect to database: ", err)
 	}
 	DB = database
+	log.Println("DB Connected")
 }
 
 func Init() {
 	createMaterializedViews()
-	createIndexes()
 	RowCount, _ = GetRowCount()
 
 	go scheduleMaterializedViewUpdates()
@@ -47,6 +47,7 @@ func GetRowCount() (int, error) {
 }
 
 func createMaterializedViews() {
+	log.Println("Creating materialized views...")
 	query := `
 		CREATE MATERIALIZED VIEW IF NOT EXISTS mv_country_product_revenue AS
 		SELECT
@@ -105,6 +106,8 @@ func refreshMaterializedViews() {
 }
 
 func createIndexes() {
+	log.Println("Creating Indexes")
+
 	indexQuery := `
 		CREATE INDEX IF NOT EXISTS idx_mv_country_product_revenue_country_product 
 		ON mv_country_product_revenue (row_id);
@@ -136,6 +139,7 @@ func createIndexes() {
 	if err := DB.Exec(indexQuery).Error; err != nil {
 		log.Printf("Error creating index: %v", err)
 	}
+
 }
 
 func scheduleMaterializedViewUpdates() {
