@@ -29,8 +29,7 @@ func ConnectDB() {
 }
 
 func Init() {
-
-	createMaterializedView()
+	createMaterializedViews()
 	createIndexes()
 	RowCount, _ = GetRowCount()
 }
@@ -43,7 +42,7 @@ func GetRowCount() (int, error) {
 
 	return count, nil
 }
-func createMaterializedView() {
+func createMaterializedViews() {
 	query := `
 		CREATE MATERIALIZED VIEW IF NOT EXISTS mv_country_product_revenue AS
 		SELECT
